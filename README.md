@@ -11,3 +11,10 @@ There are 2 ways to achieve that:
 NB: Obviously, combining these 2 approaches is possible.
 
 Public sharing and collective commitment will allow us to tackle issues related to architecture changes (especially for GPU programming).
+
+Implemented algorithms so far:
+
+- In CUDA: Bruteforce distance calculation between 2 matrices of vectors (Application for feature matching in Computer vision).
+
+- In OpenMP: Maximum single-sell profit (Application in Finance).
+

@@ -38,7 +38,7 @@ __global__ void bruteforce_distances (TYPE *A, TYPE *B , TYPE *D, int n, int m ,
   #define CHUNK 4
 #endif
 
-extern __shared__ TYPE sB[];          // Allocation of shared mem @ compile time : < CHUNK * sizeof(TYPE) >
+extern __shared__ TYPE sB[];          // Allocation of shared mem @ runtime : < CHUNK * sizeof(TYPE) >
 
 int bx  = blockIdx.x;		              // Grid size  = < ceil(M/CHUNK) >
 int tx  = threadIdx.x;                // Block size = < dim >
@@ -98,7 +98,7 @@ int main (int argc , char *argv[])
     bruteforce_distances <float> <<< blocks , threads , CHUNK * dim * sizeof(float)>>> (d_AT , d_B , d_DT , N , M , dim);
     cudaDeviceSynchronize();
 
-  // Transpose d_D on the GPU (d_DT) ...
+  // Transpose d_DT on the GPU (d_D) ...
 
   // Copying the results back to the host
   cudaMemcpy(h_D , d_D , N * M * sizeof(float) , cudaMemcpyDeviceToHost);
