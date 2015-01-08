@@ -73,10 +73,17 @@ for (int i = 0; i < CHUNK; i++)
 
 int main (int argc , char *argv[])
 {
-  // Prefer L1 cache over shared memory
-  cudaFuncSetCacheConfig(bruteforce_distances, cudaFuncCachePreferL1);
-
   // Initializing host data ... (N, M, dim, h_A , h_B , h_D, etc...)
+  const int dim = 128;
+  const int N = 4100;
+  const int M = 24600;
+
+  float *h_A = new float[N * dim];
+  float *h_B = new float[M * dim];
+  float *h_D = new float[M * N];
+
+  for (int i = 0; i < N * dim; i++) h_A[i] = 1.0f;
+  for (int i = 0; i < M * dim; i++) h_B[i] = 1.0f;
 
   // Memory Allocation + GPU transferts
   float *d_A;   cudaMalloc((void**)&d_A , N * dim * sizeof(float));   // Matrix A
@@ -92,7 +99,7 @@ int main (int argc , char *argv[])
 
   // KERNEL LAUNCH
     // Prefer L1 cache over shared memory
-    cudaFuncSetCacheConfig(bruteforce_distances, cudaFuncCachePreferL1);
+    cudaFuncSetCacheConfig(bruteforce_distances<float>, cudaFuncCachePreferL1);
     dim3 blocks  (ceil(M/CHUNK));
     dim3 threads (dim);
     bruteforce_distances <float> <<< blocks , threads , CHUNK * dim * sizeof(float)>>> (d_AT , d_B , d_DT , N , M , dim);
@@ -105,9 +112,13 @@ int main (int argc , char *argv[])
 
   // Freeing GPU data
   cudaFree(d_A);
-  cudaFree(d_AT));
-  cudaFree(d_B));
-  cudaFree(d_DT));
+  cudaFree(d_AT);
+  cudaFree(d_B);
+  cudaFree(d_DT);
 
-  return O;
+  delete [] h_D;
+  delete [] h_B;
+  delete [] h_A;
+
+  return 0;
 }
