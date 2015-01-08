@@ -113,7 +113,7 @@ int main (int argc , char *argv[])
   const int M = 24600;
 
   float *h_A = new float[N * dim]; filling(h_A, N, dim, 100.0f);
-  float *h_B = new float[M * dim]; filling(h_A, M, dim, 100.0f);
+  float *h_B = new float[M * dim]; filling(h_B, M, dim, 100.0f);
   float *h_D = new float[M * N];
 
   // Memory Allocation + GPU transferts
