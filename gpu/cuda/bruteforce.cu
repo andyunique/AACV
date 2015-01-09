@@ -40,34 +40,36 @@ __global__ void bruteforce_distances (TYPE *A, TYPE *B , TYPE *D, int n, int m ,
 
 extern __shared__ TYPE sB[];          // Allocation of shared mem @ runtime : < CHUNK * sizeof(TYPE) >
 
-int bx  = blockIdx.x;		              // Grid size  = < ceil(M/CHUNK) >
+int bx  = blockIdx.x;		          // Grid size  = < ceil(M/CHUNK) >
 int tx  = threadIdx.x;                // Block size = < dim >
   
 for (int i = 0; i < CHUNK; i++)
-    sB[(i*dim)+tx] = B[(((bx*CHUNK)+i)*dim)+tx];
+  sB[(i*dim)+threadIdx.x] = B[(((bx*CHUNK)+i)*dim)+tx];
   __syncthreads();
 
   while (tx < n)
   {
     TYPE result[CHUNK];
+    
     for (int i = 0; i < CHUNK; i++)   // Initializing result array
       result[i] = (TYPE) 0.0f;
 
     for (int i = 0; i < dim; i++)
     {
       TYPE Atemp = A[(n*i)+tx];       // Reading elements of Matrix A for L1/L2 cache storage
+      
       for (int j = 0; j < CHUNK; j++)
       {
         TYPE temp = Atemp - sB[i + (j*dim)];
         result[j] += temp * temp;
       }
     }
+   
     for (int i = 0; i < CHUNK; i++)   // Copying final results to global memory
       D[((i+(bx*CHUNK))*n)+ tx] = result[i];
     tx += blockDim.x;
   }
 }
-
 
 // CUDA Kernel for transposing matrices with float elements
 #define BLOCK_DIM 16
@@ -103,6 +105,36 @@ void filling (float *matrix, int width , int height, float high) // high = highe
     matrix[i]= low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(high - low)));
 }
 
+// Convenience function for checking CUDA runtime API results
+// can be wrapped around any runtime API call. No-op in release builds.
+inline
+cudaError_t checkCuda(cudaError_t result)
+{
+#if defined(DEBUG) || defined(_DEBUG)
+  if (result != cudaSuccess) {
+    fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(result));
+    assert(result == cudaSuccess);
+  }
+#endif
+  return result;
+}
+
+// Convenience function for checking CUDA error state including 
+// errors caused by asynchronous calls (like kernel launches). Note that
+// this causes device synchronization, but is a no-op in release builds.
+inline
+cudaError_t checkCudaErrors()
+{
+  cudaError_t result = cudaSuccess;
+  checkCuda(result = cudaGetLastError()); // runtime API errors
+#if defined(DEBUG) || defined(_DEBUG)
+  result = cudaDeviceSynchronize(); // async kernel launch errors
+  if (result != cudaSuccess)
+    fprintf(stderr, "CUDA Launch Error: %s\n", cudaGetErrorString(result));  
+#endif
+  return result;
+}
+
 // MAIN : EXAMPLE OF KERNEL LAUNCH (using float elements)
 
 int main (int argc , char *argv[])
@@ -112,56 +144,60 @@ int main (int argc , char *argv[])
   const int N = 4100;
   const int M = 24600;
 
-  float *h_A = new float[N * dim]; filling(h_A, N, dim, 100.0f);
-  float *h_B = new float[M * dim]; filling(h_B, M, dim, 100.0f);
-  float *h_D = new float[M * N];
+  // Host memory allocation -- page-locked for faster transfers
+  float *h_A; checkCuda(cudaMallocHost((void**)&h_A, N * dim * sizeof(float))); 
+  filling(h_A, N, dim, 100.0f);
+  float *h_B; checkCuda(cudaMallocHost((void**)&h_B, M * dim * sizeof(float))); 
+  filling(h_B, M, dim, 100.0f);
+  float *h_D; checkCuda(cudaMallocHost((void**)&h_D, M * N * sizeof(float))); 
 
   // Memory Allocation + GPU transferts
-  float *d_A;   cudaMalloc((void**)&d_A , N * dim * sizeof(float));   // Matrix A
-  float *d_AT;  cudaMalloc((void **)&d_AT , N * dim *sizeof(float));  // Transposed A
-  float *d_B;   cudaMalloc((void**)&d_B , M * dim * sizeof(float));   // Matrix B
-  float *d_D;   cudaMalloc((void**)&d_D , M * N * sizeof(float));     // Matrix D containing euclidean distances
-  float *d_DT;  cudaMalloc((void**)&d_DT , M * N * sizeof(float));    // Transposed D
+  float *d_A;   checkCuda(cudaMalloc((void**)&d_A , N * dim * sizeof(float)));  // Matrix A
+  float *d_AT;  checkCuda(cudaMalloc((void **)&d_AT , N * dim *sizeof(float))); // Transposed A
+  float *d_B;   checkCuda(cudaMalloc((void**)&d_B , M * dim * sizeof(float)));  // Matrix B
+  float *d_D;   checkCuda(cudaMalloc((void**)&d_D , M * N * sizeof(float)));    // Matrix D containing euclidean distances
+  float *d_DT;  checkCuda(cudaMalloc((void**)&d_DT , M * N * sizeof(float)));   // Transposed D
 
-  cudaMemcpy(d_A , h_A , N * dim * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_B , h_B , M * dim * sizeof(float), cudaMemcpyHostToDevice);
+  checkCuda(cudaMemcpy(d_A , h_A , N * dim * sizeof(float), cudaMemcpyHostToDevice));
+  checkCuda(cudaMemcpy(d_B , h_B , M * dim * sizeof(float), cudaMemcpyHostToDevice));
 
   // Transpose d_A on the GPU (d_AT)
-  cudaFuncSetCacheConfig(transposing, cudaFuncCachePreferShared);
+  checkCuda(cudaFuncSetCacheConfig(transposing, cudaFuncCachePreferShared));
 
   dim3 blocks_t0  (ceil((float)dim / BLOCK_DIM), ceil((float)N / BLOCK_DIM));
   dim3 threads_t0 (BLOCK_DIM, BLOCK_DIM);
   transposing <<<blocks_t0,threads_t0>>> (d_AT , d_A , dim , N);
-  cudaDeviceSynchronize();
-
+  checkCudaErrors();
 
   // KERNEL LAUNCH
     // Prefer L1 cache over shared memory
-    cudaFuncSetCacheConfig(bruteforce_distances<float>, cudaFuncCachePreferL1);
+    checkCuda(cudaFuncSetCacheConfig(bruteforce_distances<float>, cudaFuncCachePreferL1));
     dim3 blocks  (ceil(M/CHUNK));
     dim3 threads (dim);
-    bruteforce_distances <float> <<< blocks , threads , CHUNK * dim * sizeof(float)>>> (d_AT , d_B , d_DT , N , M , dim);
-    cudaDeviceSynchronize();
+    int smemBytes = CHUNK * dim * sizeof(float);
+    bruteforce_distances <float> <<< blocks , threads , smemBytes>>> (d_AT , d_B , d_DT , N , M , dim);
+    checkCudaErrors();
 
   // Transpose d_DT on the GPU (d_D)
   dim3 blocks_t1  (ceil((float)N / BLOCK_DIM), ceil((float)M / BLOCK_DIM));
   dim3 threads_t1 (BLOCK_DIM, BLOCK_DIM);
   transposing <<<blocks_t1,threads_t1>>> (d_D , d_DT , N , M);
-  cudaDeviceSynchronize();
+  checkCudaErrors();
 
   // Copying the results back to the host
-  cudaMemcpy(h_D , d_D , N * M * sizeof(float) , cudaMemcpyDeviceToHost);
+  checkCuda(cudaMemcpy(h_D , d_D , N * M * sizeof(float) , cudaMemcpyDeviceToHost));
 
   // Freeing GPU data
-  cudaFree(d_A);
-  cudaFree(d_AT);
-  cudaFree(d_B);
-  cudaFree(d_DT);
-  cudaFree(d_D);
+  checkCuda(cudaFree(d_A));
+  checkCuda(cudaFree(d_AT));
+  checkCuda(cudaFree(d_B));
+  checkCuda(cudaFree(d_DT));
+  checkCuda(cudaFree(d_D));
+  checkCuda(cudaFree(h_D));
+  checkCuda(cudaFree(h_B));
+  checkCuda(cudaFree(h_A));
 
-  delete [] h_D;
-  delete [] h_B;
-  delete [] h_A;
+  checkCuda(cudaDeviceReset());
 
   return 0;
 }
