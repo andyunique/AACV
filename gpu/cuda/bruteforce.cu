@@ -40,11 +40,11 @@ __global__ void bruteforce_distances (TYPE *A, TYPE *B , TYPE *D, int n, int m ,
 
 extern __shared__ TYPE sB[];          // Allocation of shared mem @ runtime : < CHUNK * sizeof(TYPE) >
 
-int bx  = blockIdx.x;		              // Grid size  = < ceil(M/CHUNK) >
+int bx  = blockIdx.x;		          // Grid size  = < ceil(M/CHUNK) >
 int tx  = threadIdx.x;                // Block size = < dim >
   
 for (int i = 0; i < CHUNK; i++)
-    sB[(i*dim)+tx] = B[(((bx*CHUNK)+i)*dim)+tx];
+  sB[(i*dim)+threadIdx.x] = B[(((bx*CHUNK)+i)*dim)+tx];
   __syncthreads();
 
   while (tx < n)
