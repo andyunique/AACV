@@ -27,6 +27,8 @@
  * - FEEL FREE TO UPGRADE IT !
  */
 
+#include "../tools/checkerrors.h"
+#include "../tools/wrappers.h"
 
 template <typename TYPE>
 __global__ void bruteforce_distances (TYPE *A, TYPE *B , TYPE *D, int n, int m , int dim)
@@ -71,31 +73,6 @@ for (int i = 0; i < CHUNK; i++)
   }
 }
 
-// CUDA Kernel for transposing matrices with float elements
-#define BLOCK_DIM 16
-
-__global__ void transposing(float *odata, float *idata, int width, int height)
-{
-  __shared__ float block[BLOCK_DIM][BLOCK_DIM+1];
-
-  unsigned int xIndex = blockIdx.x * BLOCK_DIM + threadIdx.x;
-  unsigned int yIndex = blockIdx.y * BLOCK_DIM + threadIdx.y;
-  if((xIndex < width) && (yIndex < height))
-  {
-    unsigned int index_in = yIndex * width + xIndex;
-    block[threadIdx.y][threadIdx.x] = idata[index_in];
-  }
-  __syncthreads();
-
-  xIndex = blockIdx.y * BLOCK_DIM + threadIdx.x;
-  yIndex = blockIdx.x * BLOCK_DIM + threadIdx.y;
-  if((xIndex < height) && (yIndex < width))
-  {
-    unsigned int index_out = yIndex * height + xIndex;
-    odata[index_out] = block[threadIdx.x][threadIdx.y];
-  }
-}
-
 // Function for filling input matrices with random values
 #include <cfloat>
 void filling (float *matrix, int width , int height, float high) // high = highest value
@@ -103,36 +80,6 @@ void filling (float *matrix, int width , int height, float high) // high = highe
   float low = 0.0f;
   for(int i = 0; i < width * height; i++)
     matrix[i]= low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(high - low)));
-}
-
-// Convenience function for checking CUDA runtime API results
-// can be wrapped around any runtime API call. No-op in release builds.
-inline
-cudaError_t checkCuda(cudaError_t result)
-{
-#if defined(DEBUG) || defined(_DEBUG)
-  if (result != cudaSuccess) {
-    fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(result));
-    assert(result == cudaSuccess);
-  }
-#endif
-  return result;
-}
-
-// Convenience function for checking CUDA error state including 
-// errors caused by asynchronous calls (like kernel launches). Note that
-// this causes device synchronization, but is a no-op in release builds.
-inline
-cudaError_t checkCudaErrors()
-{
-  cudaError_t result = cudaSuccess;
-  checkCuda(result = cudaGetLastError()); // runtime API errors
-#if defined(DEBUG) || defined(_DEBUG)
-  result = cudaDeviceSynchronize(); // async kernel launch errors
-  if (result != cudaSuccess)
-    fprintf(stderr, "CUDA Launch Error: %s\n", cudaGetErrorString(result));  
-#endif
-  return result;
 }
 
 // MAIN : EXAMPLE OF KERNEL LAUNCH (using float elements)
@@ -161,28 +108,18 @@ int main (int argc , char *argv[])
   checkCuda(cudaMemcpy(d_A , h_A , N * dim * sizeof(float), cudaMemcpyHostToDevice));
   checkCuda(cudaMemcpy(d_B , h_B , M * dim * sizeof(float), cudaMemcpyHostToDevice));
 
-  // Transpose d_A on the GPU (d_AT)
-  checkCuda(cudaFuncSetCacheConfig(transposing, cudaFuncCachePreferShared));
+  call_transposing <float> (d_AT , d_A , dim , N); // Transposing A
 
-  dim3 blocks_t0  (ceil((float)dim / BLOCK_DIM), ceil((float)N / BLOCK_DIM));
-  dim3 threads_t0 (BLOCK_DIM, BLOCK_DIM);
-  transposing <<<blocks_t0,threads_t0>>> (d_AT , d_A , dim , N);
-  checkCudaErrors();
+	  // KERNEL LAUNCH
+	  // Prefer L1 cache over shared memory
+	  checkCuda(cudaFuncSetCacheConfig(bruteforce_distances<float>, cudaFuncCachePreferL1));
+	  dim3 blocks  (ceil(M/CHUNK));
+	  dim3 threads (dim);
+	  int smemBytes = CHUNK * dim * sizeof(float);
+	  bruteforce_distances <float> <<< blocks , threads , smemBytes>>> (d_AT , d_B , d_DT , N , M , dim);
+	  checkCudaErrors();
 
-  // KERNEL LAUNCH
-    // Prefer L1 cache over shared memory
-    checkCuda(cudaFuncSetCacheConfig(bruteforce_distances<float>, cudaFuncCachePreferL1));
-    dim3 blocks  (ceil(M/CHUNK));
-    dim3 threads (dim);
-    int smemBytes = CHUNK * dim * sizeof(float);
-    bruteforce_distances <float> <<< blocks , threads , smemBytes>>> (d_AT , d_B , d_DT , N , M , dim);
-    checkCudaErrors();
-
-  // Transpose d_DT on the GPU (d_D)
-  dim3 blocks_t1  (ceil((float)N / BLOCK_DIM), ceil((float)M / BLOCK_DIM));
-  dim3 threads_t1 (BLOCK_DIM, BLOCK_DIM);
-  transposing <<<blocks_t1,threads_t1>>> (d_D , d_DT , N , M);
-  checkCudaErrors();
+	 call_transposing <float> (d_D , d_DT , N , M);	// Transposing back D
 
   // Copying the results back to the host
   checkCuda(cudaMemcpy(h_D , d_D , N * M * sizeof(float) , cudaMemcpyDeviceToHost));
