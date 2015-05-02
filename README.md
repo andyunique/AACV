@@ -15,7 +15,8 @@ Public sharing and collective commitment will allow us to tackle issues related 
 Implemented algorithms so far
 ----------------------------
 
-- In CUDA: Bruteforce distance calculation between 2 matrices of vectors (Application for feature matching in Computer vision).
+- In CUDA: Bruteforce distance between 2 matrices of vectors (Application for feature matching in Computer vision).
+- In CUDA: Histogram of 1D Arrays
 
 - In OpenMP: Maximum single-sell profit (Application in Finance).
 
