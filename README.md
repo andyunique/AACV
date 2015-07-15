@@ -16,6 +16,7 @@ Implemented algorithms so far
 ----------------------------
 
 - In CUDA: 
-    - Bruteforce distance between 2 matrices of vectors (Application for feature matching in Computer vision).
-    - Histogram of 1D Arrays
+    - Bruteforce distance between 2 matrices of vectors.
+    - Mesh Projection on Camera.
+    - 1D Histogram.
 
