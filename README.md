@@ -1,5 +1,5 @@
-Parallelized and Accelerated Algorithms
-=======================================
+Accelerated Algorithms for Computer Vision
+==========================================
 
 This repository contains accelerated versions of some mainstream algorithms used in computer science.
 
@@ -15,8 +15,7 @@ Public sharing and collective commitment will allow us to tackle issues related 
 Implemented algorithms so far
 ----------------------------
 
-- In CUDA: Bruteforce distance between 2 matrices of vectors (Application for feature matching in Computer vision).
-- In CUDA: Histogram of 1D Arrays
-
-- In OpenMP: Maximum single-sell profit (Application in Finance).
+- In CUDA: 
+    - Bruteforce distance between 2 matrices of vectors (Application for feature matching in Computer vision).
+    - Histogram of 1D Arrays
 
